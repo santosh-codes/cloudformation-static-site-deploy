@@ -1,0 +1,87 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Parameters:
+  BucketName:
+    Type: String
+  CustomSubDomainName:
+    Type: String
+
+Resources:
+  CloudFormationSampleWebsiteBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Ref BucketName
+      WebsiteConfiguration:
+        IndexDocument: index.html
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  TheBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref CloudFormationSampleWebsiteBucket
+      PolicyDocument:
+        Statement:
+          - Action:
+              - s3:GetObject
+            Effect: Allow
+            Resource:
+              !Join [
+                "",
+                ["arn:aws:s3:::", !Ref CloudFormationSampleWebsiteBucket, "/*"],
+              ]
+            Principal:
+              CanonicalUser: !GetAtt TheCloudFrontOriginAccessIdentity.S3CanonicalUserId
+
+  TheCloudFrontDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Aliases:
+          - !Ref CustomSubDomainName
+        ViewerCertificate:
+          AcmCertificateArn: "arn:aws:acm:your-arn-of-acm"
+          MinimumProtocolVersion: TLSv1.2_2021
+          SslSupportMethod: sni-only
+        DefaultCacheBehavior:
+          Compress: true
+          ForwardedValues:
+            QueryString: false
+          TargetOriginId: my-s3-bucket
+          ViewerProtocolPolicy: redirect-to-https
+        DefaultRootObject: index.html
+        Enabled: true
+        HttpVersion: http2
+        Origins:
+          - DomainName:
+              !Join [
+                "",
+                [!Ref CloudFormationSampleWebsiteBucket, ".s3.amazonaws.com"],
+              ]
+            Id: my-s3-bucket
+            S3OriginConfig:
+              OriginAccessIdentity:
+                !Join [
+                  "",
+                  [
+                    "origin-access-identity/cloudfront/",
+                    !Ref TheCloudFrontOriginAccessIdentity,
+                  ],
+                ]
+  TheCloudFrontOriginAccessIdentity:
+    Type: AWS::CloudFront::CloudFrontOriginAccessIdentity
+    Properties:
+      CloudFrontOriginAccessIdentityConfig:
+        Comment: CloudFront OAI for asnengr.com domain
+
+  Route53DNS:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: "hosted-zone-id"
+      Name: !Ref CustomSubDomainName
+      Type: "A"
+      AliasTarget:
+        DNSName: !GetAtt TheCloudFrontDistribution.DomainName
+        HostedZoneId: your-cloudfront-distrubtion-id # This ID is same for all the cloudfront distrubtion
